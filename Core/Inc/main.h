@@ -57,13 +57,18 @@ void Error_Handler(void);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
-#define lapReset_Pin GPIO_PIN_13
-#define lapReset_GPIO_Port GPIOC
-#define lapReset_EXTI_IRQn EXTI15_10_IRQn
+#define LAP_RESET_Pin GPIO_PIN_13
+#define LAP_RESET_GPIO_Port GPIOC
+#define LAP_RESET_EXTI_IRQn EXTI15_10_IRQn
 #define LCD_CS_Pin GPIO_PIN_4
 #define LCD_CS_GPIO_Port GPIOA
 #define LCD_DC_Pin GPIO_PIN_6
 #define LCD_DC_GPIO_Port GPIOA
+#define LCD_BL_Pin GPIO_PIN_15
+#define LCD_BL_GPIO_Port GPIOA
+#define LAP_SAVE_Pin GPIO_PIN_3
+#define LAP_SAVE_GPIO_Port GPIOB
+#define LAP_SAVE_EXTI_IRQn EXTI3_IRQn
 #define LCD_RST_Pin GPIO_PIN_4
 #define LCD_RST_GPIO_Port GPIOB
 #define LD2_Pin GPIO_PIN_7

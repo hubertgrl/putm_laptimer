@@ -40,19 +40,26 @@ add_executable(${CMAKE_PROJECT_NAME})
 # Add STM32CubeMX generated sources
 add_subdirectory(cmake/stm32cubemx)
 
+
 # Link directories setup
 target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user defined library search paths
 )
+file(GLOB LCD_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/LCD/*.c")
+file(GLOB FONT_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/Fonts/*.c")
 
 # Add sources to executable
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
+    ${FONT_SOURCES}
+    ${LCD_SOURCES}
     # Add user sources here
 )
 
 # Add include paths
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
-    Core/Inc
+    Core/Inc/
+    LCD/
+    Fonts/
 # Add user defined include paths
 )
 
@@ -64,6 +71,5 @@ target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
 # Add linked libraries
 target_link_libraries(${CMAKE_PROJECT_NAME}
     stm32cubemx
-
     # Add user defined libraries
 )

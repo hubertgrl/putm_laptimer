@@ -23,11 +23,12 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "tim.h"
-// #include "usart.h"
-// #include "dma.h"
-// #include "spi.h"
+#include "dma.h"
+#include "spi.h"
+#include "rtc.h"
 
 #include "stdio.h"
+#include "DEV_Config.h"
 
 /* USER CODE END Includes */
 
@@ -38,7 +39,18 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define LAPLIST_SIZE 3
+#define LAPLIST_SIZE 5
+
+#define LAPTIME_MIN 5000
+
+#define PADDING 5
+#define LAPLIST_POS_X 5
+#define LAPLIST_POS_Y 40
+#define CURRENT_LAPTIME_POS_X 5
+#define CURRENT_LAPTIME_POS_Y 15
+
+#define CURRENT_LAPTIME_FONT &Font16
+#define LAPLIST_FONT &Font8
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -68,73 +80,147 @@ struct LapTime
 };
 
 LapTime lapTimeCurrent = {1, 0};
-LapTime lapTimeSaved;
+LapTime lapTimeSaved = {1, 0};
 
-LapTime topLapTimes[LAPLIST_SIZE];
-LapTime lastLapTimes[LAPLIST_SIZE];
+LapTime lapListTop[LAPLIST_SIZE];
+LapTime lapListLast[LAPLIST_SIZE];
 
-// char lapTimeString[16];
-// bool dmaBusy = false;
+volatile bool lapResetFlag = true;
+
+void rtcReset()
+{
+    RTC_TimeTypeDef time;
+    RTC_DateTypeDef date;
+    time.Hours = 0;
+    time.Minutes = 0;
+    time.Seconds = 0;
+    time.SubSeconds = 0;
+    time.TimeFormat = RTC_HOURFORMAT12_AM;
+    time.DayLightSaving = RTC_DAYLIGHTSAVING_NONE;
+    time.StoreOperation = RTC_STOREOPERATION_RESET;
+
+    date.WeekDay = RTC_WEEKDAY_MONDAY;
+    date.Month = RTC_MONTH_JANUARY;
+    date.Date = 1;
+    date.Year = 0;
+
+    HAL_RTC_SetTime(&hrtc, &time, RTC_FORMAT_BIN);
+    HAL_RTC_SetDate(&hrtc, &date, RTC_FORMAT_BIN);
+}
+
+unsigned int rtcGetTime()
+{
+    RTC_TimeTypeDef time;
+    RTC_DateTypeDef date;
+    HAL_RTC_GetTime(&hrtc, &time, RTC_FORMAT_BIN);
+    HAL_RTC_GetDate(&hrtc, &date, RTC_FORMAT_BIN);
+    return ((time.Hours * 3600 + time.Minutes * 60 + time.Seconds) * 1000 + ((255 - time.SubSeconds) * 1000) / 256) / 10;
+}
 
 void saveLapTime()
 {
     for (int i = LAPLIST_SIZE - 1; i > 0; i--)
     {
-        lastLapTimes[i] = lastLapTimes[i - 1];
+        lapListLast[i] = lapListLast[i - 1];
     }
-    lastLapTimes[0] = lapTimeSaved;
+    lapListLast[0] = lapTimeSaved;
 
     for (int i = 0; i < LAPLIST_SIZE; i++)
     {
-        if (lapTimeSaved.time < topLapTimes[i].time || topLapTimes[i].time == 0)
+        if (lapTimeSaved.time < lapListTop[i].time || lapListTop[i].time == 0)
         {
             for (int j = LAPLIST_SIZE - 1; j > i; j--)
             {
-                topLapTimes[j] = topLapTimes[j - 1];
+                lapListTop[j] = lapListTop[j - 1];
             }
-            topLapTimes[i] = lapTimeSaved;
+            lapListTop[i] = lapTimeSaved;
             lapTimeSaved = {0, 0};
             break;
         }
     }
 }
 
-void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+bool convertLapTime(LapTime lapTime, char *lapTimeString)
 {
-    if (htim->Instance == TIM2)
+    if (lapTimeString == NULL)
+        return 1;
+
+    if (lapTime.time == 0)
     {
-        if ((lapTimeCurrent.time % 2) == 0)
-        {
-            // Function that displays current laptime on screen
-            // if (!dmaBusy)
-            // {
-            //     int len = sprintf(lapTimeString, "\33[2J\33[H%u: %lu\n", lapTimeCurrent.count, lapTimeCurrent.time);
-            //     dmaBusy = true;
-            //     HAL_UART_Transmit_DMA(&huart3, (uint8_t *)lapTimeString, len);
-            // }
-        }
-        lapTimeCurrent.time++;
+        sprintf(lapTimeString, "--. --:--:--");
+        return 0;
+    }
+
+    unsigned int mm = 0;
+    unsigned int ss = 0;
+    unsigned int ms = 0;
+    mm = (lapTime.time / 6000) % 60;
+    ss = (lapTime.time / 100) % 60;
+    ms = lapTime.time % 100;
+
+    sprintf(lapTimeString, "%02u. %02u:%02u:%02u", lapTime.count, mm, ss, ms);
+    return 0;
+}
+
+void printLapTime(LapTime lapTime, int posX, int posY, sFONT *font)
+{
+    char lapTimeString[13] = "\0";
+    convertLapTime(lapTime, lapTimeString);
+    LCD_DisplayString(posX, posY, lapTimeString, font, BLACK, WHITE);
+}
+
+void printUI()
+{
+    LCD_DisplayString(PADDING, PADDING, "CURRENT LAP", &Font8, BLACK, WHITE);
+    LCD_DisplayString(LAPLIST_POS_X, LAPLIST_POS_Y, "LAST 5 LAPS", &Font8, BLACK, WHITE);
+    LCD_DisplayString(LAPLIST_POS_X + LCD_WIDTH / 2, LAPLIST_POS_Y, "TOP 5 LAPS", &Font8, BLACK, WHITE);
+    LCD_DrawLine(0, LAPLIST_POS_Y - PADDING, LCD_WIDTH, LAPLIST_POS_Y - PADDING, WHITE, LINE_SOLID, DOT_PIXEL_1X1);
+    LCD_DrawLine(LCD_WIDTH / 2, LAPLIST_POS_Y - PADDING, LCD_WIDTH / 2, LCD_HEIGHT, WHITE, LINE_SOLID, DOT_PIXEL_1X1);
+}
+
+void printLapLists()
+{
+    for (int i = 0; i < LAPLIST_SIZE; i++)
+    {
+        printLapTime(lapListLast[i], LAPLIST_POS_X, LAPLIST_POS_Y + 15 + i * 15, LAPLIST_FONT);
+    }
+    for (int i = 0; i < LAPLIST_SIZE; i++)
+    {
+        printLapTime(lapListTop[i], LCD_WIDTH / 2 + LAPLIST_POS_X, LAPLIST_POS_Y + 15 + i * 15, LAPLIST_FONT);
     }
 }
 
-// void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
-// {
-//     if (huart->Instance == USART3)
-//     {
-//         dmaBusy = false;
-//     }
-// }
+void HAL_SPI_TxCpltCallback(SPI_HandleTypeDef *hspi)
+{
+    if (hspi->Instance == SPI1 && dmaBusyFlag == true)
+    {
+        dmaBusyFlag = false;
+    }
+}
 
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
-    if (GPIO_Pin == lapReset_Pin && lapTimeCurrent.time > 500)
+    if (GPIO_Pin == LAP_SAVE_Pin)
     {
-        lapTimeSaved = lapTimeCurrent;
+        if (lapResetFlag == false && lapTimeCurrent.time > LAPTIME_MIN / 10)
+        {
+            lapTimeSaved = lapTimeCurrent;
+            rtcReset();
+            lapTimeCurrent.time = 0;
+            lapTimeCurrent.count++;
+        }
+        else if (lapResetFlag == true)
+        {
+            lapResetFlag = false;
+            rtcReset();
+        }
+    }
+
+    else if (GPIO_Pin == LAP_RESET_Pin)
+    {
         lapTimeCurrent.time = 0;
-        lapTimeCurrent.count++;
-        HAL_TIM_Base_Stop_IT(&htim2);
-        __HAL_TIM_SetCounter(&htim2, 0);
-        HAL_TIM_Base_Start_IT(&htim2);
+        lapResetFlag = true;
+        printLapTime(lapTimeCurrent, CURRENT_LAPTIME_POS_X, CURRENT_LAPTIME_POS_Y, CURRENT_LAPTIME_FONT);
     }
 }
 
@@ -170,23 +256,39 @@ int main(void)
     /* Initialize all configured peripherals */
     MX_GPIO_Init();
     MX_TIM2_Init();
-
-    // MX_DMA_Init();
-    // MX_USART3_UART_Init();
-    // MX_SPI1_Init();
+    MX_DMA_Init();
+    MX_SPI1_Init();
+    MX_RTC_Init();
 
     /* USER CODE BEGIN 2 */
+    LCD_Init(D2U_L2R);
+    HAL_Delay(50);
+    LCD_Clear(BLACK);
+    printUI();
+    printLapTime(lapTimeCurrent, CURRENT_LAPTIME_POS_X, CURRENT_LAPTIME_POS_Y, CURRENT_LAPTIME_FONT);
+    printLapLists();
+    LCD_Copy();
     HAL_TIM_Base_Start_IT(&htim2);
+    rtcReset();
     /* USER CODE END 2 */
 
     /* Infinite loop */
     /* USER CODE BEGIN WHILE */
     while (1)
     {
-        if (lapTimeSaved.time)
-            saveLapTime();
-        // __WFI();
+        if (!lapResetFlag)
+        {
+            lapTimeCurrent.time = rtcGetTime();
+            printLapTime(lapTimeCurrent, CURRENT_LAPTIME_POS_X, CURRENT_LAPTIME_POS_Y, CURRENT_LAPTIME_FONT);
+        }
 
+        if (lapTimeSaved.time)
+        {
+            saveLapTime();
+            printLapLists();
+        }
+        if (dmaBusyFlag == false)
+            LCD_Copy();
         /* USER CODE END WHILE */
 
         /* USER CODE BEGIN 3 */
@@ -211,7 +313,8 @@ void SystemClock_Config(void)
     /** Initializes the RCC Oscillators according to the specified parameters
      * in the RCC_OscInitTypeDef structure.
      */
-    RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
+    RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI | RCC_OSCILLATORTYPE_LSE;
+    RCC_OscInitStruct.LSEState = RCC_LSE_ON;
     RCC_OscInitStruct.HSIState = RCC_HSI_ON;
     RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
     RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
@@ -263,8 +366,7 @@ void Error_Handler(void)
 /**
  * @brief  Reports the name of the source file and the source line number
  *         where the assert_param error has occurred.
- * @param  file: pointer to t
- * he source file name
+ * @param  file: pointer to the source file name
  * @param  line: assert_param error line source number
  * @retval None
  */
