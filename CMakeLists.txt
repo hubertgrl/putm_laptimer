@@ -52,6 +52,7 @@ file(GLOB FONT_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/Fonts/*.c")
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${FONT_SOURCES}
     ${LCD_SOURCES}
+    Core/Src/laptimer_lcd.cpp
     # Add user sources here
 )
 

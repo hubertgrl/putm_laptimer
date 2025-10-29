@@ -15,9 +15,6 @@ volatile bool dmaBusyFlag = false;
 
 uint8_t SPI_Write_Buffer(uint16_t *frameBuffer, unsigned int bufferSize)
 {
-	while (dmaBusyFlag)
-	{
-	}
 	HAL_SPI_Transmit_DMA(&hspi1, (uint8_t *)frameBuffer, bufferSize);
 	dmaBusyFlag = true;
 }

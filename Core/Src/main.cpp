@@ -27,8 +27,7 @@
 #include "rtc.h"
 
 #include "stdio.h"
-#include "DEV_Config.h"
-
+#include "laptimer_lcd.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -42,14 +41,8 @@
 
 #define LAPTIME_MIN 5000
 
-#define PADDING 5
-#define LAPLIST_POS_X 5
-#define LAPLIST_POS_Y 40
-#define CURRENT_LAPTIME_POS_X 5
-#define CURRENT_LAPTIME_POS_Y 15
-
-#define CURRENT_LAPTIME_FONT &Font16
-#define LAPLIST_FONT &Font8
+#define STR_HELPER(x) #x
+#define STR(x) STR_HELPER(x)
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -78,8 +71,8 @@ struct LapTime
     unsigned long time;
 };
 
-LapTime lapTimeCurrent = {1, 0};
-LapTime lapTimeSaved = {1, 0};
+LapTime lapTimeCurrent{1, 0};
+LapTime lapTimeSaved{1, 0};
 
 LapTime lapListTop[LAPLIST_SIZE];
 LapTime lapListLast[LAPLIST_SIZE];
@@ -111,9 +104,13 @@ unsigned int rtcGetTime()
 {
     RTC_TimeTypeDef time;
     RTC_DateTypeDef date;
+
     HAL_RTC_GetTime(&hrtc, &time, RTC_FORMAT_BIN);
     HAL_RTC_GetDate(&hrtc, &date, RTC_FORMAT_BIN);
-    return ((time.Hours * 3600 + time.Minutes * 60 + time.Seconds) * 1000 + ((255 - time.SubSeconds) * 1000) / 256) / 10;
+
+    unsigned int time10ms = ((time.Hours * 3600 + time.Minutes * 60 + time.Seconds) * 1000 + ((255 - time.SubSeconds) * 1000) / 256) / 10;
+
+    return time10ms;
 }
 
 void saveLapTime()
@@ -133,21 +130,21 @@ void saveLapTime()
                 lapListTop[j] = lapListTop[j - 1];
             }
             lapListTop[i] = lapTimeSaved;
-            lapTimeSaved = {0, 0};
             break;
         }
     }
+    lapTimeSaved = {0, 0};
 }
 
-bool convertLapTime(LapTime lapTime, char *lapTimeString)
+void convertLapTime(LapTime lapTime, char *lapTimeString, size_t size)
 {
     if (lapTimeString == NULL)
-        return 1;
+        return;
 
     if (lapTime.time == 0)
     {
-        sprintf(lapTimeString, "--. --:--:--");
-        return 0;
+        snprintf(lapTimeString, size, "--. --:--:--");
+        return;
     }
 
     unsigned int mm = 0;
@@ -157,43 +154,44 @@ bool convertLapTime(LapTime lapTime, char *lapTimeString)
     ss = (lapTime.time / 100) % 60;
     ms = lapTime.time % 100;
 
-    sprintf(lapTimeString, "%02u. %02u:%02u:%02u", lapTime.count, mm, ss, ms);
-    return 0;
+    snprintf(lapTimeString, size, "%02u. %02u:%02u:%02u", lapTime.count, mm, ss, ms);
 }
 
-void printLapTime(LapTime lapTime, int posX, int posY, sFONT *font)
+void showLapTime(LapTime lapTime, int posX, int posY, int font)
 {
-    char lapTimeString[13] = "\0";
-    convertLapTime(lapTime, lapTimeString);
-    LCD_DisplayString(posX, posY, lapTimeString, font, BLACK, WHITE);
+    char lapTimeString[13];
+    convertLapTime(lapTime, lapTimeString, sizeof(lapTimeString));
+    if (lcdPrintString(posX, posY, lapTimeString, font, BLACK, WHITE))
+        lcdPrintString(10, 10, "ERROR", 24, BLACK, RED);
 }
 
-void printUI()
+void showUI()
 {
-    LCD_DisplayString(PADDING, PADDING, "CURRENT LAP", &Font8, BLACK, WHITE);
-    LCD_DisplayString(LAPLIST_POS_X, LAPLIST_POS_Y, "LAST 5 LAPS", &Font8, BLACK, WHITE);
-    LCD_DisplayString(LAPLIST_POS_X + LCD_WIDTH / 2, LAPLIST_POS_Y, "TOP 5 LAPS", &Font8, BLACK, WHITE);
-    LCD_DrawLine(0, LAPLIST_POS_Y - PADDING, LCD_WIDTH, LAPLIST_POS_Y - PADDING, WHITE, LINE_SOLID, DOT_PIXEL_1X1);
-    LCD_DrawLine(LCD_WIDTH / 2, LAPLIST_POS_Y - PADDING, LCD_WIDTH / 2, LCD_HEIGHT, WHITE, LINE_SOLID, DOT_PIXEL_1X1);
+
+    lcdPrintString(PADDING, PADDING, "CURRENT LAP", 8, BLACK, WHITE);
+    lcdPrintString(LAPLIST_POS_X, LAPLIST_POS_Y, "LAST " STR(LAPLIST_SIZE) " LAPS", 8, BLACK, WHITE);
+    lcdPrintString(LAPLIST_POS_X + LCD_WIDTH / 2, LAPLIST_POS_Y, "TOP " STR(LAPLIST_SIZE) " LAPS", 8, BLACK, WHITE);
+    lcdPrintLine(0, LAPLIST_POS_Y - PADDING, LCD_WIDTH, LAPLIST_POS_Y - PADDING, WHITE);
+    lcdPrintLine(LCD_WIDTH / 2, LAPLIST_POS_Y - PADDING, LCD_WIDTH / 2, LCD_HEIGHT, WHITE);
 }
 
-void printLapLists()
+void showLapLists()
 {
     for (int i = 0; i < LAPLIST_SIZE; i++)
     {
-        printLapTime(lapListLast[i], LAPLIST_POS_X, LAPLIST_POS_Y + 15 + i * 15, LAPLIST_FONT);
+        showLapTime(lapListLast[i], LAPLIST_POS_X, LAPLIST_POS_Y + LAPLIST_SPACING + i * LAPLIST_SPACING, LAPLIST_FONT);
     }
     for (int i = 0; i < LAPLIST_SIZE; i++)
     {
-        printLapTime(lapListTop[i], LCD_WIDTH / 2 + LAPLIST_POS_X, LAPLIST_POS_Y + 15 + i * 15, LAPLIST_FONT);
+        showLapTime(lapListTop[i], LCD_WIDTH / 2 + LAPLIST_POS_X, LAPLIST_POS_Y + LAPLIST_SPACING + i * LAPLIST_SPACING, LAPLIST_FONT);
     }
 }
 
 void HAL_SPI_TxCpltCallback(SPI_HandleTypeDef *hspi)
 {
-    if (hspi->Instance == SPI1 && dmaBusyFlag == true)
+    if (hspi->Instance == SPI1 && lcdIsBusy())
     {
-        dmaBusyFlag = false;
+        lcdSetFree();
     }
 }
 
@@ -219,7 +217,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
     {
         lapTimeCurrent.time = 0;
         lapResetFlag = true;
-        printLapTime(lapTimeCurrent, CURRENT_LAPTIME_POS_X, CURRENT_LAPTIME_POS_Y, CURRENT_LAPTIME_FONT);
+        showLapTime(lapTimeCurrent, CURRENT_LAPTIME_POS_X, CURRENT_LAPTIME_POS_Y, CURRENT_LAPTIME_FONT);
     }
 }
 
@@ -247,7 +245,6 @@ int main(void)
 
     /* Configure the system clock */
     SystemClock_Config();
-
     /* USER CODE BEGIN SysInit */
 
     /* USER CODE END SysInit */
@@ -259,13 +256,14 @@ int main(void)
     MX_RTC_Init();
 
     /* USER CODE BEGIN 2 */
-    LCD_Init(D2U_L2R);
+    lcdInit();
     HAL_Delay(50);
-    LCD_Clear(BLACK);
-    printUI();
-    printLapTime(lapTimeCurrent, CURRENT_LAPTIME_POS_X, CURRENT_LAPTIME_POS_Y, CURRENT_LAPTIME_FONT);
-    printLapLists();
-    LCD_Copy();
+    lcdClear();
+    showUI();
+    showLapTime(lapTimeCurrent, CURRENT_LAPTIME_POS_X, CURRENT_LAPTIME_POS_Y, CURRENT_LAPTIME_FONT);
+    showLapLists();
+
+    lcdCopy();
     rtcReset();
     /* USER CODE END 2 */
 
@@ -276,16 +274,16 @@ int main(void)
         if (!lapResetFlag)
         {
             lapTimeCurrent.time = rtcGetTime();
-            printLapTime(lapTimeCurrent, CURRENT_LAPTIME_POS_X, CURRENT_LAPTIME_POS_Y, CURRENT_LAPTIME_FONT);
+            showLapTime(lapTimeCurrent, CURRENT_LAPTIME_POS_X, CURRENT_LAPTIME_POS_Y, CURRENT_LAPTIME_FONT);
         }
 
         if (lapTimeSaved.time)
         {
             saveLapTime();
-            printLapLists();
+            showLapLists();
         }
-        if (dmaBusyFlag == false)
-            LCD_Copy();
+        if (!lcdIsBusy())
+            lcdCopy();
         /* USER CODE END WHILE */
 
         /* USER CODE BEGIN 3 */
