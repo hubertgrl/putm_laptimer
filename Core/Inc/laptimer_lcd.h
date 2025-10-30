@@ -27,8 +27,13 @@
 #define CURRENT_LAPTIME_POS_X 5
 #define CURRENT_LAPTIME_POS_Y 15
 
+#define LAPLIST_SIZE_SHOW 5
+
 #define CURRENT_LAPTIME_FONT 16
-#define LAPLIST_FONT 8
+#define UI_FONT 8
+
+#define CURRENT_LAPTIME_LETTER_WIDTH 11
+#define UI_LETTER_WIDTH 5
 
 void lcdInit();
 void lcdClear();

@@ -25,8 +25,10 @@
 #include "dma.h"
 #include "spi.h"
 #include "rtc.h"
+#include "usart.h"
 
 #include "stdio.h"
+#include "laptimer_functions.h"
 #include "laptimer_lcd.h"
 /* USER CODE END Includes */
 
@@ -37,12 +39,8 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define LAPLIST_SIZE 5
-
 #define LAPTIME_MIN 5000
 
-#define STR_HELPER(x) #x
-#define STR(x) STR_HELPER(x)
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -64,20 +62,6 @@ void SystemClock_Config(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-
-struct LapTime
-{
-    unsigned int count;
-    unsigned long time;
-};
-
-LapTime lapTimeCurrent{1, 0};
-LapTime lapTimeSaved{1, 0};
-
-LapTime lapListTop[LAPLIST_SIZE];
-LapTime lapListLast[LAPLIST_SIZE];
-
-volatile bool lapResetFlag = true;
 
 void rtcReset()
 {
@@ -113,80 +97,6 @@ unsigned int rtcGetTime()
     return time10ms;
 }
 
-void saveLapTime()
-{
-    for (int i = LAPLIST_SIZE - 1; i > 0; i--)
-    {
-        lapListLast[i] = lapListLast[i - 1];
-    }
-    lapListLast[0] = lapTimeSaved;
-
-    for (int i = 0; i < LAPLIST_SIZE; i++)
-    {
-        if (lapTimeSaved.time < lapListTop[i].time || lapListTop[i].time == 0)
-        {
-            for (int j = LAPLIST_SIZE - 1; j > i; j--)
-            {
-                lapListTop[j] = lapListTop[j - 1];
-            }
-            lapListTop[i] = lapTimeSaved;
-            break;
-        }
-    }
-    lapTimeSaved = {0, 0};
-}
-
-void convertLapTime(LapTime lapTime, char *lapTimeString, size_t size)
-{
-    if (lapTimeString == NULL)
-        return;
-
-    if (lapTime.time == 0)
-    {
-        snprintf(lapTimeString, size, "--. --:--:--");
-        return;
-    }
-
-    unsigned int mm = 0;
-    unsigned int ss = 0;
-    unsigned int ms = 0;
-    mm = (lapTime.time / 6000) % 60;
-    ss = (lapTime.time / 100) % 60;
-    ms = lapTime.time % 100;
-
-    snprintf(lapTimeString, size, "%02u. %02u:%02u:%02u", lapTime.count, mm, ss, ms);
-}
-
-void showLapTime(LapTime lapTime, int posX, int posY, int font)
-{
-    char lapTimeString[13];
-    convertLapTime(lapTime, lapTimeString, sizeof(lapTimeString));
-    if (lcdPrintString(posX, posY, lapTimeString, font, BLACK, WHITE))
-        lcdPrintString(10, 10, "ERROR", 24, BLACK, RED);
-}
-
-void showUI()
-{
-
-    lcdPrintString(PADDING, PADDING, "CURRENT LAP", 8, BLACK, WHITE);
-    lcdPrintString(LAPLIST_POS_X, LAPLIST_POS_Y, "LAST " STR(LAPLIST_SIZE) " LAPS", 8, BLACK, WHITE);
-    lcdPrintString(LAPLIST_POS_X + LCD_WIDTH / 2, LAPLIST_POS_Y, "TOP " STR(LAPLIST_SIZE) " LAPS", 8, BLACK, WHITE);
-    lcdPrintLine(0, LAPLIST_POS_Y - PADDING, LCD_WIDTH, LAPLIST_POS_Y - PADDING, WHITE);
-    lcdPrintLine(LCD_WIDTH / 2, LAPLIST_POS_Y - PADDING, LCD_WIDTH / 2, LCD_HEIGHT, WHITE);
-}
-
-void showLapLists()
-{
-    for (int i = 0; i < LAPLIST_SIZE; i++)
-    {
-        showLapTime(lapListLast[i], LAPLIST_POS_X, LAPLIST_POS_Y + LAPLIST_SPACING + i * LAPLIST_SPACING, LAPLIST_FONT);
-    }
-    for (int i = 0; i < LAPLIST_SIZE; i++)
-    {
-        showLapTime(lapListTop[i], LCD_WIDTH / 2 + LAPLIST_POS_X, LAPLIST_POS_Y + LAPLIST_SPACING + i * LAPLIST_SPACING, LAPLIST_FONT);
-    }
-}
-
 void HAL_SPI_TxCpltCallback(SPI_HandleTypeDef *hspi)
 {
     if (hspi->Instance == SPI1 && lcdIsBusy())
@@ -197,19 +107,53 @@ void HAL_SPI_TxCpltCallback(SPI_HandleTypeDef *hspi)
 
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
-    if (GPIO_Pin == LAP_SAVE_Pin)
+    if (GPIO_Pin == LAP_GATE_1_Pin)
     {
-        if (lapResetFlag == false && lapTimeCurrent.time > LAPTIME_MIN / 10)
+        switch (lapMode)
         {
-            lapTimeSaved = lapTimeCurrent;
-            rtcReset();
-            lapTimeCurrent.time = 0;
-            lapTimeCurrent.count++;
+        case ONE_GATE_MODE:
+            if (lapResetFlag == false && lapTimeCurrent.time > LAPTIME_MIN / 10)
+            {
+                lapTimeSaved = lapTimeCurrent;
+                rtcReset();
+                lapTimeCurrent.time = 0;
+                lapTimeCurrent.count++;
+            }
+            else if (lapResetFlag == true)
+            {
+                lapResetFlag = false;
+                rtcReset();
+            }
+            break;
+        case TWO_GATE_MODE:
+            if (lapResetFlag == true)
+            {
+                lapResetFlag = false;
+                rtcReset();
+            }
+            break;
+        default:
+            break;
         }
-        else if (lapResetFlag == true)
+    }
+    else if (GPIO_Pin == LAP_GATE_2_Pin)
+    {
+        switch (lapMode)
         {
-            lapResetFlag = false;
-            rtcReset();
+        case ONE_GATE_MODE:
+            break;
+        case TWO_GATE_MODE:
+            if (lapResetFlag == false && lapTimeCurrent.time > LAPTIME_MIN / 10)
+            {
+                lapTimeSaved = lapTimeCurrent;
+                lapResetFlag = true;
+                rtcReset();
+                lapTimeCurrent.time = 0;
+                lapTimeCurrent.count++;
+            }
+            break;
+        default:
+            break;
         }
     }
 
@@ -217,7 +161,6 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
     {
         lapTimeCurrent.time = 0;
         lapResetFlag = true;
-        showLapTime(lapTimeCurrent, CURRENT_LAPTIME_POS_X, CURRENT_LAPTIME_POS_Y, CURRENT_LAPTIME_FONT);
     }
 }
 
@@ -254,12 +197,16 @@ int main(void)
     MX_DMA_Init();
     MX_SPI1_Init();
     MX_RTC_Init();
+    MX_USART3_UART_Init();
 
     /* USER CODE BEGIN 2 */
+    char lapTimeSavedString[14];
+    bool lapResetFlagOld = true;
     lcdInit();
     HAL_Delay(50);
     lcdClear();
     showUI();
+    showMode();
     showLapTime(lapTimeCurrent, CURRENT_LAPTIME_POS_X, CURRENT_LAPTIME_POS_Y, CURRENT_LAPTIME_FONT);
     showLapLists();
 
@@ -272,17 +219,24 @@ int main(void)
     while (1)
     {
         if (!lapResetFlag)
-        {
             lapTimeCurrent.time = rtcGetTime();
-            showLapTime(lapTimeCurrent, CURRENT_LAPTIME_POS_X, CURRENT_LAPTIME_POS_Y, CURRENT_LAPTIME_FONT);
+        if (lapResetFlag != lapResetFlagOld)
+        {
+            lapMode = checkMode();
+            showMode();
+            lapResetFlagOld = lapResetFlag;
         }
+
+        showLapTime(lapTimeCurrent, CURRENT_LAPTIME_POS_X, CURRENT_LAPTIME_POS_Y, CURRENT_LAPTIME_FONT);
 
         if (lapTimeSaved.time)
         {
+            convertLapTime(lapTimeSaved, lapTimeSavedString, sizeof(lapTimeSavedString));
+            sendLapTime(lapTimeSavedString, sizeof(lapTimeSavedString));
             saveLapTime();
             showLapLists();
         }
-        if (!lcdIsBusy())
+        if (!lcdIsBusy() && (lapTimeCurrent.time % 2 == 0))
             lcdCopy();
         /* USER CODE END WHILE */
 

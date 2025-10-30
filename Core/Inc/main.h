@@ -64,13 +64,18 @@ void Error_Handler(void);
 #define LCD_CS_GPIO_Port GPIOA
 #define LCD_DC_Pin GPIO_PIN_6
 #define LCD_DC_GPIO_Port GPIOA
+#define LAP_MODE_Pin GPIO_PIN_12
+#define LAP_MODE_GPIO_Port GPIOB
 #define LCD_BL_Pin GPIO_PIN_15
 #define LCD_BL_GPIO_Port GPIOA
-#define LAP_SAVE_Pin GPIO_PIN_3
-#define LAP_SAVE_GPIO_Port GPIOB
-#define LAP_SAVE_EXTI_IRQn EXTI3_IRQn
+#define LAP_GATE_1_Pin GPIO_PIN_3
+#define LAP_GATE_1_GPIO_Port GPIOB
+#define LAP_GATE_1_EXTI_IRQn EXTI3_IRQn
 #define LCD_RST_Pin GPIO_PIN_4
 #define LCD_RST_GPIO_Port GPIOB
+#define LAP_GATE_2_Pin GPIO_PIN_5
+#define LAP_GATE_2_GPIO_Port GPIOB
+#define LAP_GATE_2_EXTI_IRQn EXTI9_5_IRQn
 #define LD2_Pin GPIO_PIN_7
 #define LD2_GPIO_Port GPIOB
 

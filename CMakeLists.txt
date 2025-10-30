@@ -53,6 +53,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${FONT_SOURCES}
     ${LCD_SOURCES}
     Core/Src/laptimer_lcd.cpp
+    Core/Src/laptimer_functions.cpp
     # Add user sources here
 )
 
